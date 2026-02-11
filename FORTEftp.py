@@ -993,8 +993,8 @@ class FORTEftp(QMainWindow):
         """Fetch vzdálených změn"""
         try:
             output = self.run_git_command(["fetch", "--all"]) or "Fetch dokončen."
-            self.git_status_output.setPlainText(output)
-            self.refresh_git_status()
+            status = self.run_git_command(["status", "-sb"]) or "Čistý stav."
+            self.git_status_output.setPlainText(f"{output}\n\n{status}")
         except Exception as e:
             QMessageBox.warning(self, "Git", str(e))
 
@@ -1002,8 +1002,8 @@ class FORTEftp(QMainWindow):
         """Pull změn"""
         try:
             output = self.run_git_command(["pull"]) or "Pull dokončen."
-            self.git_status_output.setPlainText(output)
-            self.refresh_git_status()
+            status = self.run_git_command(["status", "-sb"]) or "Čistý stav."
+            self.git_status_output.setPlainText(f"{output}\n\n{status}")
         except Exception as e:
             QMessageBox.warning(self, "Git", str(e))
 
@@ -1011,8 +1011,8 @@ class FORTEftp(QMainWindow):
         """Push změn"""
         try:
             output = self.run_git_command(["push"]) or "Push dokončen."
-            self.git_status_output.setPlainText(output)
-            self.refresh_git_status()
+            status = self.run_git_command(["status", "-sb"]) or "Čistý stav."
+            self.git_status_output.setPlainText(f"{output}\n\n{status}")
         except Exception as e:
             QMessageBox.warning(self, "Git", str(e))
 
