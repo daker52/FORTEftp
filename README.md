@@ -33,7 +33,6 @@ Moderní a výkonný FTP/SSH klient postavený na PyQt5 s intuitivním dvoupanel
 
 ### 📁 Inteligentní Správce Souborů
 - **Dvoupanelové rozhraní** - Lokální ↔ Vzdálené soubory vedle sebe
-- **Drag & Drop přenosy** - Jednoduché nahrávání/stahování
 - **Synchronizace souborů** - 📤 Automatické nahrání pouze změněných souborů
 - **Bezpečné mazání** - Volitelné mazání souborů, které nejsou v lokální složce
 - **Správa složek** - Vytváření, mazání, procházení adresářů
@@ -42,8 +41,14 @@ Moderní a výkonný FTP/SSH klient postavený na PyQt5 s intuitivním dvoupanel
 ### 💻 Integrovaný SSH Terminál
 - Plnohodnotný SSH terminál přímo v aplikaci
 - Barevné zvýraznění výstupu
-- Historie příkazů
-- Real-time výstup
+- Interaktivní zadávání příkazů
+
+### 🧩 Integrovaný Git Panel
+- Rychlé zjištění stavu repozitáře
+- Diff a log přímo v aplikaci
+- Commit, push, pull, fetch
+- Vytváření a přepínání branchí
+- Rychlé příkazy s vysvětlením (např. `add .`, `add -u`, `--force`)
 
 ### 🎯 Inteligentní Synchronizace
 - Detekce změn podle data modifikace a velikosti
@@ -182,6 +187,21 @@ python build_exe.py
 2. Přepněte na záložku **"💻 SSH Terminál"**
 3. Zadávejte příkazy jako v běžném terminálu
 
+### 6️⃣ Git Záložka
+
+| Akce | Popis |
+|------|-------|
+| **🔍 Najít repo** | Najde Git repo ve zvolené složce |
+| **🔄 Status** | Zobrazí krátký stav (`git status -sb`) |
+| **🧾 Diff** | Zobrazí rozdíly (`git diff`) |
+| **📜 Log** | Posledních 50 commitů (`git log --oneline`) |
+| **✅ Commit** | `git add -A` + commit se zprávou |
+| **⬇️ Fetch/Pull** | Načtení a stažení změn |
+| **⬆️ Push** | Odeslání commitů |
+| **➕ Vytvořit** | Vytvoření nové branche |
+| **🔀 Přepnout** | Přepnutí aktuální branche |
+| **Rychlé příkazy** | Časté příkazy s vysvětlením a potvrzením pro rizikové akce |
+
 ---
 
 ## 🗂️ Struktura Projektu
@@ -311,6 +331,7 @@ python FORTEftp.py --verbose
 - 💻 Integrovaný SSH terminál
 - 📤 Inteligentní synchronizace změn
 - 🗑️ Bezpečné mazání vzdálených souborů
+- 🧩 Integrovaný Git panel
 - 🎨 Moderní GUI s ikonou
 - 📦 Build do .exe
 
