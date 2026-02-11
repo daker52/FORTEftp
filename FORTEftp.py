@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import (
     QTreeWidget, QTreeWidgetItem, QListWidget, QPushButton, QLabel,
     QLineEdit, QTabWidget, QSplitter, QMessageBox, QFileDialog,
     QDialog, QFormLayout, QComboBox, QSpinBox, QTextEdit, QMenu,
-    QInputDialog, QProgressDialog, QCheckBox
+    QInputDialog, QProgressDialog, QCheckBox, QGroupBox
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize
 from PyQt5.QtGui import QIcon, QFont
@@ -516,6 +516,95 @@ class FORTEftp(QMainWindow):
         branch_layout.addWidget(self.git_switch_branch_btn)
         layout.addLayout(branch_layout)
 
+        commands_group = QGroupBox("Rychlé příkazy")
+        commands_layout = QVBoxLayout()
+        self.git_quick_buttons = []
+
+        def add_quick_command(text, args, description, requires_confirm=False, confirm_text=None):
+            row_layout = QHBoxLayout()
+            btn = QPushButton(text)
+            btn.clicked.connect(
+                lambda _, a=args, d=description, c=requires_confirm, t=confirm_text: self.git_quick_command(a, d, c, t)
+            )
+            desc = QLabel(description)
+            desc.setWordWrap(True)
+            row_layout.addWidget(btn)
+            row_layout.addWidget(desc, 1)
+            commands_layout.addLayout(row_layout)
+            self.git_quick_buttons.append(btn)
+
+        add_quick_command(
+            "➕ Add .",
+            ["add", "."],
+            "Zastageuje nové a změněné soubory v aktuální složce."
+        )
+        add_quick_command(
+            "➕ Add -u",
+            ["add", "-u"],
+            "Zastageuje úpravy a smazání již sledovaných souborů (nové nepřidá)."
+        )
+        add_quick_command(
+            "➕ Add -A",
+            ["add", "-A"],
+            "Zastageuje všechny změny v repo (nové, úpravy i smazání)."
+        )
+        add_quick_command(
+            "↩️ Restore --staged .",
+            ["restore", "--staged", "."],
+            "Odstageuje změny, ale ponechá je v working tree."
+        )
+        add_quick_command(
+            "↩️ Restore .",
+            ["restore", "."],
+            "Zahodí změny v working tree pro aktuální složku.",
+            True,
+            "Tento příkaz zahodí lokální změny. Pokračovat?"
+        )
+        add_quick_command(
+            "🧹 Reset --soft HEAD~1",
+            ["reset", "--soft", "HEAD~1"],
+            "Zruší poslední commit, změny zůstanou staged."
+        )
+        add_quick_command(
+            "🧹 Reset --mixed HEAD~1",
+            ["reset", "--mixed", "HEAD~1"],
+            "Zruší poslední commit, změny zůstanou v working tree (unstaged)."
+        )
+        add_quick_command(
+            "☠️ Reset --hard HEAD~1",
+            ["reset", "--hard", "HEAD~1"],
+            "Zruší poslední commit a zahodí změny (nevratné).",
+            True,
+            "Tento příkaz je nevratný a zahodí změny. Pokračovat?"
+        )
+        add_quick_command(
+            "📦 Stash",
+            ["stash"],
+            "Uloží rozpracované změny do stash a vyčistí working tree."
+        )
+        add_quick_command(
+            "📦 Stash pop",
+            ["stash", "pop"],
+            "Obnoví poslední stash a odstraní ho ze zásobníku."
+        )
+        add_quick_command(
+            "⬆️ Push --force",
+            ["push", "--force"],
+            "Vynutí přepsání historie na remote (rizikové).",
+            True,
+            "Force push může přepsat historii na remote. Pokračovat?"
+        )
+        add_quick_command(
+            "⬆️ Push --force-with-lease",
+            ["push", "--force-with-lease"],
+            "Bezpečnější force push, selže pokud na remote přibyly změny.",
+            True,
+            "Force-with-lease může přepsat historii na remote. Pokračovat?"
+        )
+
+        commands_group.setLayout(commands_layout)
+        layout.addWidget(commands_group)
+
         self.git_outputs = QTabWidget()
         self.git_status_output = QTextEdit()
         self.git_status_output.setReadOnly(True)
@@ -765,6 +854,8 @@ class FORTEftp(QMainWindow):
         self.git_create_branch_btn.setEnabled(enabled)
         self.git_branch_combo.setEnabled(enabled)
         self.git_switch_branch_btn.setEnabled(enabled)
+        for btn in getattr(self, "git_quick_buttons", []):
+            btn.setEnabled(enabled)
 
     def resolve_git_repo_root(self, path):
         """Najít Git repo root podle cesty"""
@@ -817,6 +908,27 @@ class FORTEftp(QMainWindow):
             raise RuntimeError(error or output or "Neznámá Git chyba.")
 
         return output
+
+    def git_quick_command(self, args, description, requires_confirm=False, confirm_text=None):
+        """Spustit rychlý Git příkaz s volitelným potvrzením"""
+        if requires_confirm:
+            reply = QMessageBox.question(
+                self,
+                "Git",
+                confirm_text or "Tento příkaz může být nevratný. Pokračovat?",
+                QMessageBox.Yes | QMessageBox.No
+            )
+            if reply != QMessageBox.Yes:
+                return
+
+        try:
+            output = self.run_git_command(args)
+            if not output:
+                output = f"Hotovo: {' '.join(['git'] + args)}"
+            self.git_status_output.setPlainText(output)
+            self.refresh_git_status()
+        except Exception as e:
+            QMessageBox.warning(self, "Git", str(e))
 
     def is_git_available(self):
         """Ověřit dostupnost git v PATH"""
