@@ -7,6 +7,7 @@ Verze: 1.0
 import sys
 import json
 import os
+import subprocess
 from pathlib import Path
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -273,6 +274,7 @@ class FORTEftp(QMainWindow):
         self.current_env = None
         self.current_remote_path = "/"
         self.current_local_path = str(Path.home())
+        self.git_repo_root = None
         
         self.init_ui()
         self.load_environments()
@@ -298,6 +300,10 @@ class FORTEftp(QMainWindow):
         # Záložka SSH terminál
         self.ssh_terminal = SSHTerminal()
         self.tabs.addTab(self.ssh_terminal, "💻 SSH Terminál")
+
+        # Záložka Git
+        self.git_tab = self.create_git_tab()
+        self.tabs.addTab(self.git_tab, "🧩 Git")
         
         main_layout.addWidget(self.tabs)
         
@@ -431,6 +437,103 @@ class FORTEftp(QMainWindow):
         # Načíst lokální soubory
         self.refresh_local_files()
         
+        return widget
+
+    def create_git_tab(self):
+        """Vytvořit záložku Git"""
+        widget = QWidget()
+        layout = QVBoxLayout()
+
+        search_layout = QHBoxLayout()
+        search_layout.addWidget(QLabel("Hledat v:"))
+        self.git_repo_path_input = QLineEdit(self.current_local_path)
+        search_layout.addWidget(self.git_repo_path_input)
+        self.git_browse_repo_btn = QPushButton("📂 Vybrat složku")
+        self.git_browse_repo_btn.clicked.connect(self.select_git_folder)
+        search_layout.addWidget(self.git_browse_repo_btn)
+        layout.addLayout(search_layout)
+
+        repo_layout = QHBoxLayout()
+        repo_layout.addWidget(QLabel("Repo:"))
+        self.git_repo_label = QLabel("(nenalezeno)")
+        self.git_repo_label.setStyleSheet("font-weight: bold;")
+        repo_layout.addWidget(self.git_repo_label)
+        repo_layout.addStretch()
+        self.git_detect_btn = QPushButton("🔍 Najít repo")
+        self.git_detect_btn.clicked.connect(self.refresh_git_repo)
+        repo_layout.addWidget(self.git_detect_btn)
+        layout.addLayout(repo_layout)
+
+        actions_layout = QHBoxLayout()
+        self.git_status_btn = QPushButton("🔄 Status")
+        self.git_status_btn.clicked.connect(self.refresh_git_status)
+        actions_layout.addWidget(self.git_status_btn)
+
+        self.git_fetch_btn = QPushButton("⬇️ Fetch")
+        self.git_fetch_btn.clicked.connect(self.git_fetch)
+        actions_layout.addWidget(self.git_fetch_btn)
+
+        self.git_pull_btn = QPushButton("⬇️ Pull")
+        self.git_pull_btn.clicked.connect(self.git_pull)
+        actions_layout.addWidget(self.git_pull_btn)
+
+        self.git_push_btn = QPushButton("⬆️ Push")
+        self.git_push_btn.clicked.connect(self.git_push)
+        actions_layout.addWidget(self.git_push_btn)
+
+        self.git_diff_btn = QPushButton("🧾 Diff")
+        self.git_diff_btn.clicked.connect(self.git_show_diff)
+        actions_layout.addWidget(self.git_diff_btn)
+
+        self.git_log_btn = QPushButton("📜 Log")
+        self.git_log_btn.clicked.connect(self.git_show_log)
+        actions_layout.addWidget(self.git_log_btn)
+
+        actions_layout.addStretch()
+        layout.addLayout(actions_layout)
+
+        commit_layout = QHBoxLayout()
+        self.git_commit_message = QLineEdit()
+        self.git_commit_message.setPlaceholderText("Zadejte commit message...")
+        commit_layout.addWidget(self.git_commit_message)
+        self.git_commit_btn = QPushButton("✅ Commit")
+        self.git_commit_btn.clicked.connect(self.git_commit)
+        commit_layout.addWidget(self.git_commit_btn)
+        layout.addLayout(commit_layout)
+
+        branch_layout = QHBoxLayout()
+        self.git_new_branch_input = QLineEdit()
+        self.git_new_branch_input.setPlaceholderText("Nová branch...")
+        branch_layout.addWidget(self.git_new_branch_input)
+        self.git_create_branch_btn = QPushButton("➕ Vytvořit")
+        self.git_create_branch_btn.clicked.connect(self.git_create_branch)
+        branch_layout.addWidget(self.git_create_branch_btn)
+
+        self.git_branch_combo = QComboBox()
+        branch_layout.addWidget(self.git_branch_combo)
+        self.git_switch_branch_btn = QPushButton("🔀 Přepnout")
+        self.git_switch_branch_btn.clicked.connect(self.git_switch_branch)
+        branch_layout.addWidget(self.git_switch_branch_btn)
+        layout.addLayout(branch_layout)
+
+        self.git_outputs = QTabWidget()
+        self.git_status_output = QTextEdit()
+        self.git_status_output.setReadOnly(True)
+        self.git_outputs.addTab(self.git_status_output, "Status")
+
+        self.git_diff_output = QTextEdit()
+        self.git_diff_output.setReadOnly(True)
+        self.git_outputs.addTab(self.git_diff_output, "Diff")
+
+        self.git_log_output = QTextEdit()
+        self.git_log_output.setReadOnly(True)
+        self.git_outputs.addTab(self.git_log_output, "Log")
+
+        layout.addWidget(self.git_outputs)
+
+        widget.setLayout(layout)
+        self.set_git_ui_enabled(False)
+        self.refresh_git_repo()
         return widget
     
     def load_environments(self):
@@ -619,6 +722,10 @@ class FORTEftp(QMainWindow):
         
         self.current_local_path = path
         self.local_tree.clear()
+
+        if hasattr(self, "git_repo_label"):
+            self.git_repo_path_input.setText(self.current_local_path)
+            self.refresh_git_repo()
         
         try:
             # Přidat odkaz na nadřazenou složku
@@ -643,6 +750,254 @@ class FORTEftp(QMainWindow):
         
         except Exception as e:
             QMessageBox.warning(self, "Chyba", f"Nelze načíst složku:\n{str(e)}")
+
+    def set_git_ui_enabled(self, enabled):
+        """Povolit/zakázat Git ovládací prvky"""
+        self.git_status_btn.setEnabled(enabled)
+        self.git_fetch_btn.setEnabled(enabled)
+        self.git_pull_btn.setEnabled(enabled)
+        self.git_push_btn.setEnabled(enabled)
+        self.git_diff_btn.setEnabled(enabled)
+        self.git_log_btn.setEnabled(enabled)
+        self.git_commit_btn.setEnabled(enabled)
+        self.git_commit_message.setEnabled(enabled)
+        self.git_new_branch_input.setEnabled(enabled)
+        self.git_create_branch_btn.setEnabled(enabled)
+        self.git_branch_combo.setEnabled(enabled)
+        self.git_switch_branch_btn.setEnabled(enabled)
+
+    def resolve_git_repo_root(self, path):
+        """Najít Git repo root podle cesty"""
+        try:
+            result = subprocess.run(
+                ["git", "-C", path, "rev-parse", "--show-toplevel"],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            return result.stdout.strip()
+        except Exception:
+            return self.find_git_root_by_fs(path)
+
+    def find_git_root_by_fs(self, path):
+        """Najít Git repo root podle .git složky"""
+        try:
+            current = Path(path).resolve()
+        except Exception:
+            return None
+
+        while True:
+            if (current / ".git").is_dir():
+                return str(current)
+            if current.parent == current:
+                break
+            current = current.parent
+
+        return None
+
+    def run_git_command(self, args, repo_root=None):
+        """Spustit Git příkaz v repo rootu"""
+        root = repo_root or self.git_repo_root
+        if not root:
+            raise RuntimeError("Git repozitář nebyl nalezen.")
+
+        try:
+            result = subprocess.run(
+                ["git", "-C", root] + args,
+                capture_output=True,
+                text=True
+            )
+        except FileNotFoundError:
+            raise RuntimeError("Git není nainstalovaný nebo není v PATH.")
+
+        output = result.stdout.strip()
+        error = result.stderr.strip()
+
+        if result.returncode != 0:
+            raise RuntimeError(error or output or "Neznámá Git chyba.")
+
+        return output
+
+    def is_git_available(self):
+        """Ověřit dostupnost git v PATH"""
+        try:
+            subprocess.run(
+                ["git", "--version"],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            return True
+        except Exception:
+            return False
+
+    def refresh_git_repo(self):
+        """Načíst Git repo dle zvolené složky"""
+        search_path = self.git_repo_path_input.text().strip() or self.current_local_path
+        repo_root = self.resolve_git_repo_root(search_path)
+        self.git_repo_root = repo_root
+
+        if repo_root:
+            self.git_repo_label.setText(repo_root)
+            if self.is_git_available():
+                self.set_git_ui_enabled(True)
+                self.refresh_git_status()
+                self.git_load_branches()
+            else:
+                self.set_git_ui_enabled(False)
+                self.git_status_output.setPlainText("Git nebyl nalezen v PATH. Nainstalujte Git a restartujte aplikaci.")
+                self.git_diff_output.clear()
+                self.git_log_output.clear()
+                self.git_branch_combo.clear()
+        else:
+            self.git_repo_label.setText("(nenalezeno)")
+            self.set_git_ui_enabled(False)
+            self.git_status_output.setPlainText("Git repo nebyl nalezen v aktuální složce.")
+            self.git_diff_output.clear()
+            self.git_log_output.clear()
+            self.git_branch_combo.clear()
+
+    def select_git_folder(self):
+        """Vybrat složku pro hledání Git repozitáře"""
+        start_path = self.git_repo_path_input.text().strip() or self.current_local_path
+        selected = QFileDialog.getExistingDirectory(
+            self,
+            "Vyberte složku s Git repozitářem",
+            start_path
+        )
+        if selected:
+            self.git_repo_path_input.setText(selected)
+            self.refresh_git_repo()
+
+    def refresh_git_status(self):
+        """Načíst git status"""
+        try:
+            output = self.run_git_command(["status", "-sb"]) or "Čistý stav."
+            self.git_status_output.setPlainText(output)
+        except Exception as e:
+            self.git_status_output.setPlainText(str(e))
+
+    def git_fetch(self):
+        """Fetch vzdálených změn"""
+        try:
+            output = self.run_git_command(["fetch", "--all"]) or "Fetch dokončen."
+            self.git_status_output.setPlainText(output)
+            self.refresh_git_status()
+        except Exception as e:
+            QMessageBox.warning(self, "Git", str(e))
+
+    def git_pull(self):
+        """Pull změn"""
+        try:
+            output = self.run_git_command(["pull"]) or "Pull dokončen."
+            self.git_status_output.setPlainText(output)
+            self.refresh_git_status()
+        except Exception as e:
+            QMessageBox.warning(self, "Git", str(e))
+
+    def git_push(self):
+        """Push změn"""
+        try:
+            output = self.run_git_command(["push"]) or "Push dokončen."
+            self.git_status_output.setPlainText(output)
+            self.refresh_git_status()
+        except Exception as e:
+            QMessageBox.warning(self, "Git", str(e))
+
+    def git_commit(self):
+        """Commit změn (git add -A + commit)"""
+        message = self.git_commit_message.text().strip()
+        if not message:
+            QMessageBox.warning(self, "Git", "Zadejte commit message.")
+            return
+
+        try:
+            self.run_git_command(["add", "-A"])
+            output = self.run_git_command(["commit", "-m", message])
+            self.git_commit_message.clear()
+            self.git_status_output.setPlainText(output)
+            self.refresh_git_status()
+        except Exception as e:
+            QMessageBox.warning(self, "Git", str(e))
+
+    def git_create_branch(self):
+        """Vytvořit novou branch"""
+        branch_name = self.git_new_branch_input.text().strip()
+        if not branch_name:
+            QMessageBox.warning(self, "Git", "Zadejte název nové branche.")
+            return
+
+        try:
+            output = self.run_git_command(["checkout", "-b", branch_name])
+            self.git_new_branch_input.clear()
+            self.git_status_output.setPlainText(output)
+            self.git_load_branches()
+            self.refresh_git_status()
+        except Exception as e:
+            QMessageBox.warning(self, "Git", str(e))
+
+    def git_load_branches(self):
+        """Načíst seznam branchí"""
+        try:
+            output = self.run_git_command(["branch", "--list"])
+        except Exception as e:
+            self.git_branch_combo.clear()
+            self.git_status_output.setPlainText(str(e))
+            return
+
+        branches = []
+        current_branch = None
+        for line in output.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith("*"):
+                branch = line[1:].strip()
+                current_branch = branch
+            else:
+                branch = line
+            branches.append(branch)
+
+        self.git_branch_combo.blockSignals(True)
+        self.git_branch_combo.clear()
+        self.git_branch_combo.addItems(branches)
+        if current_branch:
+            index = self.git_branch_combo.findText(current_branch)
+            if index >= 0:
+                self.git_branch_combo.setCurrentIndex(index)
+        self.git_branch_combo.blockSignals(False)
+
+    def git_switch_branch(self):
+        """Přepnout branch"""
+        branch = self.git_branch_combo.currentText().strip()
+        if not branch:
+            QMessageBox.warning(self, "Git", "Vyberte branch.")
+            return
+
+        try:
+            output = self.run_git_command(["checkout", branch])
+            self.git_status_output.setPlainText(output)
+            self.refresh_git_status()
+        except Exception as e:
+            QMessageBox.warning(self, "Git", str(e))
+
+    def git_show_log(self):
+        """Zobrazit git log"""
+        try:
+            output = self.run_git_command(["log", "--oneline", "-n", "50"])
+            self.git_log_output.setPlainText(output or "Bez záznamu.")
+            self.git_outputs.setCurrentWidget(self.git_log_output)
+        except Exception as e:
+            self.git_log_output.setPlainText(str(e))
+
+    def git_show_diff(self):
+        """Zobrazit git diff"""
+        try:
+            output = self.run_git_command(["diff"])
+            self.git_diff_output.setPlainText(output or "Žádné rozdíly.")
+            self.git_outputs.setCurrentWidget(self.git_diff_output)
+        except Exception as e:
+            self.git_diff_output.setPlainText(str(e))
     
     def refresh_remote_files(self):
         """Obnovit seznam vzdálených souborů"""
@@ -1103,6 +1458,11 @@ class FORTEftp(QMainWindow):
                     files_to_delete.append(remote_file)
             
             progress_delete.setValue(100)
+
+        # Uživatel vybere soubory k nahrání
+        files_to_upload = self.select_files_to_upload(files_to_upload)
+        if files_to_upload is None:
+            return
         
         # Připravit zprávu
         has_changes = len(files_to_upload) > 0 or len(files_to_delete) > 0
@@ -1251,6 +1611,126 @@ class FORTEftp(QMainWindow):
         
         QMessageBox.information(self, "Výsledek synchronizace", result_msg)
         self.refresh_remote_files()
+
+    def select_files_to_upload(self, files_to_upload):
+        """Dialog pro výběr souborů k nahrání"""
+        if not files_to_upload:
+            return []
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Výběr souborů k nahrání")
+        dialog.setModal(True)
+        dialog.setMinimumWidth(600)
+
+        layout = QVBoxLayout()
+
+        title_label = QLabel("Vyberte soubory, které chcete nahrát na server")
+        title_label.setStyleSheet("font-weight: bold; font-size: 11pt;")
+        layout.addWidget(title_label)
+
+        layout.addSpacing(8)
+
+        select_all_checkbox = QCheckBox("Vybrat vše")
+        select_all_checkbox.setChecked(True)
+        layout.addWidget(select_all_checkbox)
+
+        files_tree = QTreeWidget()
+        files_tree.setHeaderLabels(["Soubor", "Důvod", "Velikost"])
+        files_tree.setRootIsDecorated(False)
+        files_tree.setAlternatingRowColors(True)
+        files_tree.setSelectionMode(QTreeWidget.NoSelection)
+        files_tree.setColumnWidth(0, 360)
+        layout.addWidget(files_tree)
+
+        for file_info in files_to_upload:
+            item = QTreeWidgetItem([
+                file_info['rel_path'],
+                file_info.get('reason', ''),
+                self.format_size(file_info.get('size', 0))
+            ])
+            item.setCheckState(0, Qt.Checked)
+            item.setData(0, Qt.UserRole, file_info)
+            files_tree.addTopLevelItem(item)
+
+        summary_label = QLabel()
+        layout.addWidget(summary_label)
+
+        def update_summary():
+            selected_count = 0
+            total_size = 0
+            for i in range(files_tree.topLevelItemCount()):
+                item = files_tree.topLevelItem(i)
+                if item.checkState(0) == Qt.Checked:
+                    selected_count += 1
+                    file_data = item.data(0, Qt.UserRole)
+                    total_size += file_data.get('size', 0)
+            summary_label.setText(
+                f"Vybráno: {selected_count}/{len(files_to_upload)} souborů ({self.format_size(total_size)})"
+            )
+
+        def refresh_select_all_state():
+            checked = 0
+            total = files_tree.topLevelItemCount()
+            for i in range(total):
+                if files_tree.topLevelItem(i).checkState(0) == Qt.Checked:
+                    checked += 1
+
+            select_all_checkbox.blockSignals(True)
+            if checked == 0:
+                select_all_checkbox.setCheckState(Qt.Unchecked)
+            elif checked == total:
+                select_all_checkbox.setCheckState(Qt.Checked)
+            else:
+                select_all_checkbox.setCheckState(Qt.PartiallyChecked)
+            select_all_checkbox.blockSignals(False)
+
+        def on_select_all_changed(state):
+            if state == Qt.PartiallyChecked:
+                return
+            files_tree.blockSignals(True)
+            new_state = Qt.Checked if state == Qt.Checked else Qt.Unchecked
+            for i in range(files_tree.topLevelItemCount()):
+                files_tree.topLevelItem(i).setCheckState(0, new_state)
+            files_tree.blockSignals(False)
+            update_summary()
+
+        def on_item_changed(item, column):
+            if column == 0:
+                update_summary()
+                refresh_select_all_state()
+
+        select_all_checkbox.setTristate(True)
+        select_all_checkbox.stateChanged.connect(on_select_all_changed)
+        files_tree.itemChanged.connect(on_item_changed)
+
+        update_summary()
+        refresh_select_all_state()
+
+        layout.addSpacing(10)
+
+        btn_layout = QHBoxLayout()
+        cancel_btn = QPushButton("Zrušit")
+        cancel_btn.clicked.connect(dialog.reject)
+        continue_btn = QPushButton("✅ Pokračovat")
+        continue_btn.setStyleSheet("QPushButton { background-color: #4CAF50; color: white; padding: 6px 14px; font-weight: bold; }")
+        continue_btn.clicked.connect(dialog.accept)
+
+        btn_layout.addWidget(cancel_btn)
+        btn_layout.addWidget(continue_btn)
+        layout.addLayout(btn_layout)
+
+        dialog.setLayout(layout)
+
+        if dialog.exec_() != QDialog.Accepted:
+            return None
+
+        selected_files = []
+        for i in range(files_tree.topLevelItemCount()):
+            item = files_tree.topLevelItem(i)
+            if item.checkState(0) == Qt.Checked:
+                selected_files.append(item.data(0, Qt.UserRole))
+
+        return selected_files
     
     def create_remote_directories_ftp(self, path):
         """Vytvořit vzdálené složky přes FTP"""
